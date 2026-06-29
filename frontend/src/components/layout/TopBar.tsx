@@ -1,6 +1,6 @@
 'use client';
 
-import { Search, Bell, MapPin } from 'lucide-react';
+import { Search, Bell, MapPin, Mic } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,7 +20,48 @@ export function TopBar() {
   const [locationQuery, setLocationQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const router = useRouter();
+
+  const startListening = () => {
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      alert('Your browser does not support voice input. Please try Chrome or Edge.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setSearchQuery(transcript);
+      if (transcript.trim()) {
+        router.push(`/search?q=${encodeURIComponent(transcript.trim())}`);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error === 'not-allowed') {
+        alert('Microphone permission denied. Please allow microphone access to use voice input.');
+      }
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.start();
+  };
 
   const searchLocation = async () => {
     if (!locationQuery.trim()) return;
@@ -51,7 +92,7 @@ export function TopBar() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input 
           placeholder="Search issues, news, officials, NGOs..." 
-          className="pl-9 bg-muted/50 border-none shadow-none focus-visible:ring-1"
+          className="pl-9 pr-24 bg-muted/50 border-none shadow-none focus-visible:ring-1"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -60,8 +101,16 @@ export function TopBar() {
             }
           }}
         />
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-          <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={startListening}
+            className="text-muted-foreground hover:text-primary transition-colors p-1"
+            title="Use Voice Search"
+          >
+            <Mic className={`h-4 w-4 ${isListening ? 'text-red-500 animate-pulse' : ''}`} />
+          </button>
+          <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100 hidden sm:inline-flex">
             <span className="text-xs">⌘</span>K
           </kbd>
         </div>
