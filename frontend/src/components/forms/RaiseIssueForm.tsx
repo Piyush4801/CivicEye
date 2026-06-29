@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Camera, MapPin, Sparkles, Loader2, UploadCloud } from 'lucide-react';
+import { Camera, MapPin, Sparkles, Loader2, UploadCloud, Mic } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import api from '@/lib/api';
 import { useRouter } from 'next/navigation';
@@ -23,10 +23,12 @@ const issueSchema = z.object({
 
 export function RaiseIssueForm() {
   const [isLocating, setIsLocating] = useState(false);
-  const [location, setLocation] = useState<{address: string, coordinates: number[]} | null>(null);
+  const [location, setLocation] = useState<{ address: string, coordinates: number[] } | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<{ suggestedAction: string; severity: string; confidence: number } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isListeningTitle, setIsListeningTitle] = useState(false);
+  const [isListeningDescription, setIsListeningDescription] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -47,7 +49,7 @@ export function RaiseIssueForm() {
       setIsLocating(false);
       return;
     }
-    
+
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
@@ -78,10 +80,52 @@ export function RaiseIssueForm() {
     );
   };
 
+  const startListening = (field: 'title' | 'description') => {
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert('Your browser does not support voice input. Please try Chrome or Edge.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    if (field === 'title') setIsListeningTitle(true);
+    else setIsListeningDescription(true);
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      const currentVal = form.getValues(field) || '';
+      form.setValue(field, currentVal ? `${currentVal} ${transcript}` : transcript);
+      if (field === 'title') setIsListeningTitle(false);
+      else setIsListeningDescription(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error', event.error);
+      if (event.error === 'not-allowed') {
+        alert('Microphone permission denied. Please allow microphone access to use voice input.');
+      }
+      if (field === 'title') setIsListeningTitle(false);
+      else setIsListeningDescription(false);
+    };
+
+    recognition.onend = () => {
+      if (field === 'title') setIsListeningTitle(false);
+      else setIsListeningDescription(false);
+    };
+
+    recognition.start();
+  };
+
   const handleAiAnalysis = () => {
     const values = form.getValues();
     if (!values.description) return alert('Please enter a description first for AI to analyze.');
-    
+
     setIsAnalyzing(true);
     // Mock Gemini API call
     setTimeout(() => {
@@ -96,7 +140,7 @@ export function RaiseIssueForm() {
 
   const onSubmit = async (data: z.infer<typeof issueSchema>) => {
     if (!location) return alert('Please detect your GPS location first');
-    
+
     setIsSubmitting(true);
     try {
       await api.post('/issues', {
@@ -116,7 +160,7 @@ export function RaiseIssueForm() {
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-      
+
       {/* AI Analysis Result */}
       {aiAnalysis && (
         <Alert className="bg-primary/5 border-primary/20">
@@ -132,14 +176,14 @@ export function RaiseIssueForm() {
       {/* Media Upload */}
       <div className="space-y-2">
         <Label>Photo / Video Evidence</Label>
-        <div 
+        <div
           className="border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-muted/50 transition-colors relative overflow-hidden group"
           onClick={() => fileInputRef.current?.click()}
         >
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            className="hidden" 
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
             accept="image/*"
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -176,10 +220,10 @@ export function RaiseIssueForm() {
       <div className="space-y-2">
         <Label>Location</Label>
         <div className="flex gap-2">
-          <Input 
-            readOnly 
-            placeholder="No location selected" 
-            value={location?.address || ''} 
+          <Input
+            readOnly
+            placeholder="No location selected"
+            value={location?.address || ''}
             className="bg-muted"
           />
           <Button type="button" variant="secondary" onClick={handleGetLocation} disabled={isLocating}>
@@ -192,14 +236,24 @@ export function RaiseIssueForm() {
       {/* Title */}
       <div className="space-y-2">
         <Label htmlFor="title">Issue Title</Label>
-        <Input id="title" placeholder="e.g. Deep pothole on Main Street" {...form.register('title')} />
+        <div className="relative">
+          <Input id="title" placeholder="e.g. Deep pothole on Main Street" className="pr-10" {...form.register('title')} />
+          <button
+            type="button"
+            onClick={() => startListening('title')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors z-10 p-1"
+            title="Use Voice Input"
+          >
+            <Mic className={`h-4 w-4 ${isListeningTitle ? 'text-red-500 animate-pulse' : ''}`} />
+          </button>
+        </div>
         {form.formState.errors.title && <p className="text-xs text-destructive">{form.formState.errors.title.message}</p>}
       </div>
 
       {/* Category */}
       <div className="space-y-2">
         <Label>Category</Label>
-        <Select onValueChange={(value: string) => form.setValue('category', value)}>
+        <Select onValueChange={(value: string | null) => { if (value) form.setValue('category', value) }}>
           <SelectTrigger>
             <SelectValue placeholder="Select a category" />
           </SelectTrigger>
@@ -217,20 +271,30 @@ export function RaiseIssueForm() {
       {/* Description */}
       <div className="space-y-2">
         <Label htmlFor="description">Detailed Description</Label>
-        <Textarea 
-          id="description" 
-          placeholder="Describe the issue, landmarks nearby, and how long it has been there..." 
-          className="min-h-[120px]"
-          {...form.register('description')}
-        />
+        <div className="relative">
+          <Textarea
+            id="description"
+            placeholder="Describe the issue, landmarks nearby, and how long it has been there..."
+            className="min-h-[120px] pr-10"
+            {...form.register('description')}
+          />
+          <button
+            type="button"
+            onClick={() => startListening('description')}
+            className="absolute right-3 top-3 text-muted-foreground hover:text-primary transition-colors z-10 p-1"
+            title="Use Voice Input"
+          >
+            <Mic className={`h-4 w-4 ${isListeningDescription ? 'text-red-500 animate-pulse' : ''}`} />
+          </button>
+        </div>
         {form.formState.errors.description && <p className="text-xs text-destructive">{form.formState.errors.description.message}</p>}
       </div>
-      
+
       {/* AI Analysis Trigger */}
       <div className="flex justify-end pt-2 pb-4 border-b">
-        <Button 
-          type="button" 
-          variant="outline" 
+        <Button
+          type="button"
+          variant="outline"
           onClick={handleAiAnalysis}
           disabled={isAnalyzing}
           className="gap-2 text-primary border-primary/30 hover:bg-primary/10"
